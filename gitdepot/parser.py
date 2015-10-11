@@ -282,5 +282,3 @@ def parse(filename):
     parser = ply.yacc.yacc(debug=0, write_tables=0,
                            errorlog=ply.yacc.NullLogger())
     return parser.parse(contents, lexer=lexer, tokenfunc=tf)
-
-print(parse("gitparsing.txt"))
