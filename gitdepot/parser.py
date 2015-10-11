@@ -279,16 +279,8 @@ def parse(filename):
     lexer.git_groups = set()
     lexer.git_repos = set()
     tf = TokenFunc(lexer)
-    if False:
-        lexer.input(contents)
-        while True:
-            x = tf()
-            if x is None:
-                break
-            print(x)
-    else:
-        parser = ply.yacc.yacc(debug=0, write_tables=0,
-                               errorlog=ply.yacc.NullLogger())
-        return parser.parse(contents, lexer=lexer, tokenfunc=tf)
+    parser = ply.yacc.yacc(debug=0, write_tables=0,
+                           errorlog=ply.yacc.NullLogger())
+    return parser.parse(contents, lexer=lexer, tokenfunc=tf)
 
 print(parse("gitparsing.txt"))
