@@ -40,9 +40,9 @@ class ParseError(Exception): pass
 
 # Structures
 
-User = collections.namedtuple('User', ('name',))
-Group = collections.namedtuple('Group', ('name',))
-Repo = collections.namedtuple('Repo', ('name',))
+User = collections.namedtuple('User', ('id', 'name', 'email'))
+Group = collections.namedtuple('Group', ('id', 'members'))
+Repo = collections.namedtuple('Repo', ('id',))
 
 # Tokens
 
@@ -54,7 +54,9 @@ reserved = {
 
 tokens = (
     'COLON',
+    'EQUALS',
     'IDENTIFIER',
+    'STRING',
     'WS',
     'NEWLINE',
     'INDENT',
@@ -62,10 +64,18 @@ tokens = (
 ) + tuple(reserved.values())
 
 t_COLON = r':'
+t_EQUALS = r'='
 
 def t_IDENTIFIER(t):
-    r'[a-zA-Z_][-a-zA-Z0-9_/.]*'
+    r'[a-zA-Z_][-a-zA-Z0-9_/.@]*'
     t.type = reserved.get(t.value, 'IDENTIFIER')
+    return t
+
+def t_STRING(t):
+    r'"(\\.|[^\\"])*"'
+    t.lexer.expectstring = False
+    t.lexer.lineno += t.value.count('\n')
+    t.value = t.value[1:-1]
     return t
 
 def t_comment(t):
@@ -232,31 +242,100 @@ def p_statement(t):
     '''
     t[0] = t[1]
 
+def dictionary_to_class(t, klass, key, defaults, dictionary):
+    name = klass.__name__.lower()
+    keys = set(dictionary.keys())
+    good = set(klass._fields)
+    if not keys.issubset(good):
+        k = list(keys - good)[0]
+        raise ParseError('%s:%d: key "%s" not a %s option' %
+                     (t.lexer.path, t.lexer.lineno, k, name))
+    for k, v in dictionary.items():
+        assert k in defaults
+        T = type(defaults[k])
+        if type(v) != T:
+            raise ParseError('%s:%d: key "%s" expects type %s' %
+                         (t.lexer.path, t.lexer.lineno, k, T.__name__))
+        defaults[k] = v
+    return klass(id=key, **defaults)
+
 def p_user(t):
     '''
     user : USER IDENTIFIER NEWLINE
+         | USER IDENTIFIER COLON NEWLINE INDENT dictionary DEDENT
     '''
-    t[0] = User(name=t[2])
+    defaults = {'name': '', 'email': ''}
+    if len(t) == 4:
+        t[0] = dictionary_to_class(t, User, t[2], defaults, {})
+    elif len(t) == 8:
+        t[0] = dictionary_to_class(t, User, t[2], defaults, t[6])
+    else:
+        assert False
 
 def p_group(t):
     '''
     group : GROUP IDENTIFIER NEWLINE
+          | GROUP IDENTIFIER COLON NEWLINE INDENT identifier_list_block DEDENT
     '''
-    t[0] = Group(name=t[2])
+    members = []
+    if len(t) == 8:
+        members = t[6]
+    t[0] = Group(id=t[2], members=members)
 
 def p_repo(t):
     '''
     repo : REPO IDENTIFIER NEWLINE
-         | REPO IDENTIFIER COLON repo_suite
+         | REPO IDENTIFIER COLON NEWLINE INDENT dictionary DEDENT
     '''
-    t[0] = Repo(name=t[2])
+    defaults = {}
+    if len(t) == 4:
+        t[0] = dictionary_to_class(t, Repo, t[2], defaults, {})
+    elif len(t) == 8:
+        t[0] = dictionary_to_class(t, Repo, t[2], defaults, t[6])
+    else:
+        assert False
 
-def p_repo_suite(t):
+def p_identifier_list_block(t):
     '''
-    repo_suite : USER NEWLINE
-               | NEWLINE INDENT stmt DEDENT
+    identifier_list_block : identifier_list_block IDENTIFIER NEWLINE
+                          | IDENTIFIER NEWLINE
     '''
-    t[0] = ()
+    if len(t) == 3:
+        t[0] = [t[1]]
+    elif len(t) == 4:
+        t[1].append(t[2])
+        t[0] = t[1]
+    else:
+        assert False
+
+def p_dictionary(t):
+    '''
+    dictionary : dictionary kvpair
+               | kvpair
+    '''
+    d = None
+    k = None
+    v = None
+    if len(t) == 3:
+        d = t[1]
+        k, v = t[2]
+    elif len(t) == 2:
+        d = {}
+        k, v = t[1]
+    else:
+        assert False
+    if k in d:
+        raise ParseError('%s:%d: key "%s" already used' %
+                     (t.lexer.path, t.lexer.lineno, k))
+    d[k] = v
+    t[0] = d
+
+def p_kvpair(t):
+    '''
+    kvpair : IDENTIFIER EQUALS IDENTIFIER NEWLINE
+           | IDENTIFIER EQUALS STRING NEWLINE
+    '''
+    t[0] = (t[1], t[3])
 
 def p_error(t):
     if t is None:
