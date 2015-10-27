@@ -43,7 +43,7 @@ class ParseError(Exception): pass
 User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
 Repo = collections.namedtuple('Repo', ('id', 'permissions'))
-Grant = collections.namedtuple('Grant', ('entity', 'resource'))
+Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 
 # Tokens
 
@@ -247,6 +247,8 @@ def p_statement(t):
     t[0] = t[1]
 
 def dictionary_to_class(t, klass, key, defaults, dictionary):
+    defaults = defaults.copy()
+    dictionary = dictionary.copy()
     name = klass.__name__.lower()
     keys = set(dictionary.keys())
     good = set(klass._fields)
@@ -268,6 +270,11 @@ def p_user(t):
     user : USER ATOM NEWLINE
          | USER ATOM COLON NEWLINE INDENT dictionary DEDENT
     '''
+    principals = t.lexer.git_users | t.lexer.git_groups
+    if t[2] in principals:
+        raise ParseError('%s:%d: user %s already defined as a user or group' %
+                     (t.lexer.path, t.lexer.lineno, t[2]))
+    t.lexer.git_users.add(t[2])
     defaults = {'name': '', 'email': ''}
     if len(t) == 4:
         t[0] = dictionary_to_class(t, User, t[2], defaults, {})
@@ -281,26 +288,55 @@ def p_group(t):
     group : GROUP ATOM NEWLINE
           | GROUP ATOM COLON NEWLINE INDENT identifier_list_block DEDENT
     '''
+    principals = t.lexer.git_users | t.lexer.git_groups
+    if t[2] in principals:
+        raise ParseError('%s:%d: group %s already defined as a user or group' %
+                     (t.lexer.path, t.lexer.lineno, t[2]))
+    t.lexer.git_groups.add(t[2])
     members = []
     if len(t) == 8:
         members = t[6]
+        for m in members:
+            if m not in principals:
+                raise ParseError('%s:%d: unknown user or group %s' %
+                             (t.lexer.path, t.lexer.lineno, m))
     t[0] = Group(id=t[2], members=members)
 
-def p_repo(t):
+REPO_DEFAULTS = {'permissions': []}
+
+def p_repo1(t):
     '''
     repo : REPO ATOM NEWLINE
-         | REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
     '''
-    defaults = {'permissions': []}
-    if len(t) == 4:
-        t[0] = dictionary_to_class(t, Repo, t[2], defaults, {})
-    elif len(t) == 8:
-        x = {'permissions': t[6]}
-        t[0] = dictionary_to_class(t, Repo, t[2], defaults, x)
-        print(t[6])
-        #t[0] = dictionary_to_class(t, Repo, t[2], defaults, t[6])
-    else:
-        assert False
+    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, {})
+
+def p_repo2(t):
+    '''
+    repo : REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
+    '''
+    extra = {'permissions': t[6]}
+    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
+
+def p_repo3(t):
+    '''
+    repo : REPO ATOM COLON NEWLINE INDENT dictionary DEDENT
+    '''
+    extra = t[6]
+    if 'permissions' in extra:
+        raise ParseError('%s:%d: permissions must be specified in an ACL list' %
+                     (t.lexer.path, t.lexer.lineno))
+    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
+
+def p_repo4(t):
+    '''
+    repo : REPO ATOM COLON NEWLINE INDENT dictionary acl_list DEDENT
+    '''
+    extra = t[6]
+    if 'permissions' in extra:
+        raise ParseError('%s:%d: permissions must be specified in an ACL list' %
+                     (t.lexer.path, t.lexer.lineno))
+    extra['permissions'] = t[7]
+    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
 
 def p_identifier_list_block(t):
     '''
@@ -358,9 +394,17 @@ def p_acl_list(t):
 
 def p_acl(t):
     '''
-    acl : GRANT ATOM ACCESS TO ATOM NEWLINE
+    acl : GRANT ATOM ATOM ACCESS TO ATOM NEWLINE
     '''
-    t[0] = Grant(t[2], t[5])
+    principals = t.lexer.git_users | t.lexer.git_groups
+    if t[2] not in principals:
+        raise ParseError('%s:%d: unknown user or group %s' %
+                     (t.lexer.path, t.lexer.lineno, t[2]))
+    if t[3].lower() not in ('read', 'write'):
+        raise ParseError('%s:%d: unknown action %s' %
+                     (t.lexer.path, t.lexer.lineno, t[3]))
+    t[3] = t[3].lower()
+    t[0] = Grant(t[2], t[3], t[6])
 
 def p_error(t):
     if t is None:
@@ -381,8 +425,12 @@ def parse(filename):
     lexer.expectstring = False
     lexer.git_users = set()
     lexer.git_groups = set()
+    lexer.git_groups.add('public')
     lexer.git_repos = set()
     tf = TokenFunc(lexer)
-    parser = ply.yacc.yacc(debug=0, write_tables=0,
-                           errorlog=ply.yacc.NullLogger())
+    parser = ply.yacc.yacc()
+    #parser = ply.yacc.yacc(debug=0, write_tables=0,
+    #                       errorlog=ply.yacc.NullLogger())
     return parser.parse(contents, lexer=lexer, tokenfunc=tf)
+
+print(parse('gitparsing.txt'))
