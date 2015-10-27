@@ -42,7 +42,8 @@ class ParseError(Exception): pass
 
 User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
-Repo = collections.namedtuple('Repo', ('id',))
+Repo = collections.namedtuple('Repo', ('id', 'permissions'))
+Grant = collections.namedtuple('Grant', ('entity', 'resource'))
 
 # Tokens
 
@@ -50,12 +51,15 @@ reserved = {
     'user': 'USER',
     'group': 'GROUP',
     'repo': 'REPO',
+    'grant': 'GRANT',
+    'access': 'ACCESS',
+    'to': 'TO',
 }
 
 tokens = (
     'COLON',
     'EQUALS',
-    'IDENTIFIER',
+    'ATOM',
     'STRING',
     'WS',
     'NEWLINE',
@@ -66,9 +70,9 @@ tokens = (
 t_COLON = r':'
 t_EQUALS = r'='
 
-def t_IDENTIFIER(t):
-    r'[a-zA-Z_][-a-zA-Z0-9_/.@]*'
-    t.type = reserved.get(t.value, 'IDENTIFIER')
+def t_ATOM(t):
+    r'[-a-zA-Z0-9_/.@*]+'
+    t.type = reserved.get(t.value, 'ATOM')
     return t
 
 def t_STRING(t):
@@ -261,8 +265,8 @@ def dictionary_to_class(t, klass, key, defaults, dictionary):
 
 def p_user(t):
     '''
-    user : USER IDENTIFIER NEWLINE
-         | USER IDENTIFIER COLON NEWLINE INDENT dictionary DEDENT
+    user : USER ATOM NEWLINE
+         | USER ATOM COLON NEWLINE INDENT dictionary DEDENT
     '''
     defaults = {'name': '', 'email': ''}
     if len(t) == 4:
@@ -274,8 +278,8 @@ def p_user(t):
 
 def p_group(t):
     '''
-    group : GROUP IDENTIFIER NEWLINE
-          | GROUP IDENTIFIER COLON NEWLINE INDENT identifier_list_block DEDENT
+    group : GROUP ATOM NEWLINE
+          | GROUP ATOM COLON NEWLINE INDENT identifier_list_block DEDENT
     '''
     members = []
     if len(t) == 8:
@@ -284,21 +288,24 @@ def p_group(t):
 
 def p_repo(t):
     '''
-    repo : REPO IDENTIFIER NEWLINE
-         | REPO IDENTIFIER COLON NEWLINE INDENT dictionary DEDENT
+    repo : REPO ATOM NEWLINE
+         | REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
     '''
-    defaults = {}
+    defaults = {'permissions': []}
     if len(t) == 4:
         t[0] = dictionary_to_class(t, Repo, t[2], defaults, {})
     elif len(t) == 8:
-        t[0] = dictionary_to_class(t, Repo, t[2], defaults, t[6])
+        x = {'permissions': t[6]}
+        t[0] = dictionary_to_class(t, Repo, t[2], defaults, x)
+        print(t[6])
+        #t[0] = dictionary_to_class(t, Repo, t[2], defaults, t[6])
     else:
         assert False
 
 def p_identifier_list_block(t):
     '''
-    identifier_list_block : identifier_list_block IDENTIFIER NEWLINE
-                          | IDENTIFIER NEWLINE
+    identifier_list_block : identifier_list_block ATOM NEWLINE
+                          | ATOM NEWLINE
     '''
     if len(t) == 3:
         t[0] = [t[1]]
@@ -332,10 +339,28 @@ def p_dictionary(t):
 
 def p_kvpair(t):
     '''
-    kvpair : IDENTIFIER EQUALS IDENTIFIER NEWLINE
-           | IDENTIFIER EQUALS STRING NEWLINE
+    kvpair : ATOM EQUALS ATOM NEWLINE
+           | ATOM EQUALS STRING NEWLINE
     '''
     t[0] = (t[1], t[3])
+
+def p_acl_list(t):
+    '''
+    acl_list : acl_list acl
+             | acl
+    '''
+    if len(t) == 3:
+        t[0] = t[1] + [t[2]]
+    elif len(t) == 2:
+        t[0] = [t[1]]
+    else:
+        assert False
+
+def p_acl(t):
+    '''
+    acl : GRANT ATOM ACCESS TO ATOM NEWLINE
+    '''
+    t[0] = Grant(t[2], t[5])
 
 def p_error(t):
     if t is None:
