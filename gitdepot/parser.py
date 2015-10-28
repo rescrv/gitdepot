@@ -400,11 +400,11 @@ def p_acl(t):
     if t[2] not in principals:
         raise ParseError('%s:%d: unknown user or group %s' %
                      (t.lexer.path, t.lexer.lineno, t[2]))
-    if t[3].lower() not in ('read', 'write'):
+    action = t[3].lower()
+    if action not in ('read', 'write'):
         raise ParseError('%s:%d: unknown action %s' %
                      (t.lexer.path, t.lexer.lineno, t[3]))
-    t[3] = t[3].lower()
-    t[0] = Grant(t[2], t[3], t[6])
+    t[0] = Grant(t[2], action, t[6])
 
 def p_error(t):
     if t is None:
@@ -428,9 +428,6 @@ def parse(filename):
     lexer.git_groups.add('public')
     lexer.git_repos = set()
     tf = TokenFunc(lexer)
-    parser = ply.yacc.yacc()
-    #parser = ply.yacc.yacc(debug=0, write_tables=0,
-    #                       errorlog=ply.yacc.NullLogger())
+    parser = ply.yacc.yacc(debug=0, write_tables=0,
+                           errorlog=ply.yacc.NullLogger())
     return parser.parse(contents, lexer=lexer, tokenfunc=tf)
-
-print(parse('gitparsing.txt'))
