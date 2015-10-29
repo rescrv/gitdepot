@@ -44,6 +44,7 @@ User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
 Repo = collections.namedtuple('Repo', ('id', 'permissions'))
 Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
+Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
 # Tokens
 
@@ -304,39 +305,48 @@ def p_group(t):
 
 REPO_DEFAULTS = {'permissions': []}
 
+def repo_id_normalize(x):
+    x = os.path.normpath(x)
+    x = x.strip('/')
+    return '/' + x
+
 def p_repo1(t):
     '''
     repo : REPO ATOM NEWLINE
     '''
-    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, {})
+    name = repo_id_normalize(t[2])
+    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, {})
 
 def p_repo2(t):
     '''
     repo : REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
     '''
+    name = repo_id_normalize(t[2])
     extra = {'permissions': t[6]}
-    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
+    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
 
 def p_repo3(t):
     '''
     repo : REPO ATOM COLON NEWLINE INDENT dictionary DEDENT
     '''
+    name = repo_id_normalize(t[2])
     extra = t[6]
     if 'permissions' in extra:
         raise ParseError('%s:%d: permissions must be specified in an ACL list' %
                      (t.lexer.path, t.lexer.lineno))
-    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
+    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
 
 def p_repo4(t):
     '''
     repo : REPO ATOM COLON NEWLINE INDENT dictionary acl_list DEDENT
     '''
+    name = repo_id_normalize(t[2])
     extra = t[6]
     if 'permissions' in extra:
         raise ParseError('%s:%d: permissions must be specified in an ACL list' %
                      (t.lexer.path, t.lexer.lineno))
     extra['permissions'] = t[7]
-    t[0] = dictionary_to_class(t, Repo, t[2], REPO_DEFAULTS, extra)
+    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
 
 def p_identifier_list_block(t):
     '''
@@ -430,4 +440,8 @@ def parse(filename):
     tf = TokenFunc(lexer)
     parser = ply.yacc.yacc(debug=0, write_tables=0,
                            errorlog=ply.yacc.NullLogger())
-    return parser.parse(contents, lexer=lexer, tokenfunc=tf)
+    conf = parser.parse(contents, lexer=lexer, tokenfunc=tf)
+    users = sorted([x for x in conf if isinstance(x, User)])
+    groups = sorted([x for x in conf if isinstance(x, Group)])
+    repos = sorted([x for x in conf if isinstance(x, Repo)])
+    return Configuration(users, groups, repos)
