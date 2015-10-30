@@ -402,7 +402,21 @@ def p_acl_list(t):
     else:
         assert False
 
-def p_acl(t):
+def p_acl1(t):
+    '''
+    acl : GRANT ATOM ATOM ACCESS NEWLINE
+    '''
+    principals = t.lexer.git_users | t.lexer.git_groups
+    if t[2] not in principals:
+        raise ParseError('%s:%d: unknown user or group %s' %
+                     (t.lexer.path, t.lexer.lineno, t[2]))
+    action = t[3].lower()
+    if action not in ('read', 'write'):
+        raise ParseError('%s:%d: unknown action %s' %
+                     (t.lexer.path, t.lexer.lineno, t[3]))
+    t[0] = Grant(t[2], action, '*')
+
+def p_acl2(t):
     '''
     acl : GRANT ATOM ATOM ACCESS TO ATOM NEWLINE
     '''
