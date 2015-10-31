@@ -317,11 +317,29 @@ def repo_id_normalize(x):
     x = x.strip('/')
     return '/' + x
 
+def all_parents(repo):
+    parents = set()
+    parents.add(repo)
+    while True:
+        dirname = os.path.dirname(repo)
+        if dirname in parents:
+            break
+        parents.add(dirname)
+        repo = dirname
+    return parents
+
 def p_repo1(t):
     '''
     repo : REPO ATOM NEWLINE
     '''
     name = repo_id_normalize(t[2])
+    if name in t.lexer.git_repos:
+        raise ParseError('%s:%d: repo %s already defined' %
+                     (t.lexer.path, t.lexer.lineno, name))
+    if all_parents(name) & t.lexer.git_repos:
+        raise ParseError('%s:%d: prefix of repo %s already defined' %
+                     (t.lexer.path, t.lexer.lineno, name))
+    t.lexer.git_repos.add(name)
     t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, {})
 
 def p_repo2(t):
@@ -329,6 +347,13 @@ def p_repo2(t):
     repo : REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
     '''
     name = repo_id_normalize(t[2])
+    if name in t.lexer.git_repos:
+        raise ParseError('%s:%d: repo %s already defined' %
+                     (t.lexer.path, t.lexer.lineno, name))
+    if all_parents(name) & t.lexer.git_repos:
+        raise ParseError('%s:%d: prefix of repo %s already defined' %
+                     (t.lexer.path, t.lexer.lineno, name))
+    t.lexer.git_repos.add(name)
     extra = {'permissions': t[6]}
     t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
 
@@ -465,4 +490,12 @@ def parse(filename):
     users = sorted([x for x in conf if isinstance(x, User)])
     groups = sorted([x for x in conf if isinstance(x, Group)])
     repos = sorted([x for x in conf if isinstance(x, Repo)])
+    if not [r for r in repos if r.id == '/gitdepot']:
+        raise ParseError('configuration must contain a "gitdepot" repo')
     return Configuration(users, groups, repos)
+
+if __name__ == '__main__':
+    import sys
+    for x in sys.argv[1:]:
+        print('parsing', x)
+        print(parse(x))
