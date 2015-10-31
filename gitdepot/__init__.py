@@ -378,7 +378,7 @@ def permissions_check(ctx, conf, repo, ref, old, new):
     print('write access denied')
     sys.exit(1)
 
-def main(argv):
+def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(prog='gitdepot')
     parser.add_argument('--base', type=str, default='~',
@@ -396,7 +396,7 @@ def main(argv):
     p.add_argument('ref', type=str)
     p.add_argument('old', type=str)
     p.add_argument('new', type=str)
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
     ctx = create_context(os.path.expanduser(args.base))
     if args.action == 'init':
         sys.exit(init(args.base, args.user, sys.stdin.read()) or 0)

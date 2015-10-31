@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name = 'gitdepot',
-      version = '0.1.0',
+      version = '0.1.3',
       description = 'A simple git repository management system',
       url = 'http://rescrv.net/',
       author = 'Robert Escriva',
@@ -10,7 +10,7 @@ setup(name = 'gitdepot',
       license = 'BSD',
       keywords = 'git',
       packages = find_packages(),
-      intall_requires = ['ply'],
+      install_requires = ['ply'],
       entry_points = {
           'console_scripts': ['gitdepot = gitdepot:main']
           }
