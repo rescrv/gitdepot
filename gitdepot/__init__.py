@@ -24,6 +24,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import argparse
 import fnmatch
 import os
 import re
@@ -42,6 +43,11 @@ class InvalidKeyError(Exception): pass
 
 def repo_absolute_path(ctx, repo):
     return os.path.join(ctx['repodir'], repo.id.lstrip('/'))
+
+def repo_from_conf(repo, conf):
+    for r in conf.repos:
+        if r.id == gitdepot.parser.repo_id_normalize(repo):
+            return r
 
 def relevant_principals(conf, user):
     P = set()
@@ -221,11 +227,7 @@ def serve(ctx, conf, user, cmd):
         action, arg = cmd.split(None, 1)
     if action not in ('upload-pack', 'upload-archive', 'receive-pack'):
         raise UnknownCommandError()
-    repo = None
-    for r in conf.repos:
-        if r.id == gitdepot.parser.id_normalize(arg):
-            repo = r
-            break
+    repo = repo_from_conf(arg, conf)
     if repo is None:
         raise UnknownRepositoryError()
     P = relevant_principals(conf, user)
@@ -267,7 +269,7 @@ def set_hook(ctx, repo, hook, sh):
     os.chmod(tmp.name, stat.S_IRWXU)
     os.rename(tmp.name, path)
 
-def checkout_latest_gitdepot(ctx):
+def update_hook(ctx):
     if not os.path.exists(ctx['checkout']):
         run_command(('git', 'clone', os.path.join(ctx['repodir'], 'gitdepot'), ctx['checkout']),
                     CouldNotInitializeRepoError,
@@ -313,14 +315,18 @@ def checkout_latest_gitdepot(ctx):
 gitdepot --base {0} update-hook
 '''.format(ctx['basedir']))
         set_hook(ctx, repo, 'update', '''#!/bin/sh
-gitdepot --base {0} permissions-check $@
-'''.format(ctx['basedir']))
+gitdepot --base {0} permissions-check {1} $@
+'''.format(ctx['basedir'], repo.id))
     shutil.copyfile(new_conf_path, ctx['conf'])
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
 
 def permissions_check(ctx, conf, repo, ref, old, new):
     if 'GITDEPOT_PRINCIPAL' not in os.environ:
+        sys.exit(1)
+    if not isinstance(repo, gitdepot.parser.Repo):
+        repo = repo_from_conf(repo, conf)
+    if repo is None:
         sys.exit(1)
     P = relevant_principals(conf, os.environ['GITDEPOT_PRINCIPAL'])
     perms = [p for p in repo.permissions
@@ -344,41 +350,35 @@ def permissions_check(ctx, conf, repo, ref, old, new):
     print('write access denied')
     sys.exit(1)
 
-def main():
-    ctx = create_context('.')
+def main(argv):
+    parser = argparse.ArgumentParser(prog='gitdepot')
+    parser.add_argument('--base', type=str, default='~',
+                        help='socket to talk to minion daemon (default: ~)')
+    subparsers = parser.add_subparsers(help='tools', dest='action')
+    p = subparsers.add_parser('init')
+    p.add_argument('user', type=str)
+    p = subparsers.add_parser('serve')
+    p.add_argument('user', type=str)
+    p = subparsers.add_parser('update-hook')
+    p.add_argument('ref', type=str)
+    p.add_argument('commits', type=str, nargs='*')
+    p = subparsers.add_parser('permissions-check')
+    p.add_argument('repo', type=str)
+    p.add_argument('ref', type=str)
+    p.add_argument('old', type=str)
+    p.add_argument('new', type=str)
+    args = parser.parse_args(argv)
+    ctx = create_context(os.path.expanduser(args.base))
+    if args.action == 'init':
+        sys.exit(init(args.base, args.user, sys.stdin.read()) or 0)
     os.chdir(ctx['basedir'])
     conf = gitdepot.parser.parse(ctx['conf'])
-    #serve(ctx, conf, 'rescrv', 'upload-pack HyperDex')
-    #os.environ['GITDEPOT_PRINCIPAL'] = 'rescrv'
-    #hook_update(ctx, conf, conf.repos[0], 'refs/heads/master', "XX", "YY")
-
-if __name__ == '__main__':
-    #main()
-    key = 'ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAIEAvynRwEfgIjBxpOVKaZDBTT9JBK9XZi0YXCM4fFQ1/EaGIPPFB+41gYlTNcstluMUope7ue1bOsDjDfiVas+15YW4dkJLLOidl/VSaaGTMt0axM0x6SLcw0RGYeXvlOiSEdO9tNmz2vFgtCtV861b0EGu1SmkdQBHRkPAobwgYcE='
-    init('somepath', 'rescrv', key)
-
-
-"""
+    if args.action == 'serve':
         cmd = os.environ.get('SSH_ORIGINAL_COMMAND', None)
         if cmd is None:
-            main_log.error('Need SSH_ORIGINAL_COMMAND in environment.')
             sys.exit(1)
-        os.chdir(os.path.expanduser('~'))
-
-        try:
-            newcmd = serve(
-                cfg=cfg,
-                user=user,
-                command=cmd,
-                )
-        except ServingError, e:
-            main_log.error('%s', e)
-            sys.exit(1)
-
-        main_log.debug('Serving %s', newcmd)
-        os.environ['GITOSIS_USER'] = user
-        os.execvp('git', ['git', 'shell', '-c', newcmd])
-        main_log.error('Cannot execute git-shell.')
-        sys.exit(1)
-        '''
-        """
+        sys.exit(serve(ctx, conf, args.user, cmd) or 0)
+    if args.action == 'update-hook':
+        sys.exit(update_hook(ctx) or 0)
+    if args.action == 'permissions-check':
+        sys.exit(permissions_check(ctx, conf, args.repo, args.ref, args.old, args.new) or 0)
