@@ -247,6 +247,11 @@ def p_statement(t):
     '''
     t[0] = t[1]
 
+def id_normalize(x):
+    x = os.path.normpath(x)
+    x = x.strip('/')
+    return x
+
 def dictionary_to_class(t, klass, key, defaults, dictionary):
     defaults = defaults.copy()
     dictionary = dictionary.copy()
@@ -271,6 +276,7 @@ def p_user(t):
     user : USER ATOM NEWLINE
          | USER ATOM COLON NEWLINE INDENT dictionary DEDENT
     '''
+    t[2] = id_normalize(t[2])
     principals = t.lexer.git_users | t.lexer.git_groups
     if t[2] in principals:
         raise ParseError('%s:%d: user %s already defined as a user or group' %
@@ -289,6 +295,7 @@ def p_group(t):
     group : GROUP ATOM NEWLINE
           | GROUP ATOM COLON NEWLINE INDENT identifier_list_block DEDENT
     '''
+    t[2] = id_normalize(t[2])
     principals = t.lexer.git_users | t.lexer.git_groups
     if t[2] in principals:
         raise ParseError('%s:%d: group %s already defined as a user or group' %

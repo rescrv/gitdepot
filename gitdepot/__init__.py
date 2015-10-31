@@ -28,6 +28,7 @@ import fnmatch
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,7 @@ import gitdepot.parser
 class UnknownCommandError(Exception): pass
 class UnknownRepositoryError(Exception): pass
 class CouldNotInitializeRepoError(Exception): pass
+class InvalidKeyError(Exception): pass
 
 def repo_absolute_path(ctx, repo):
     return os.path.join(ctx['repodir'], repo.id.lstrip('/'))
@@ -127,9 +129,26 @@ def create_context(base):
     ctx = {'basedir': base,
            'repodir': os.path.join(base, 'repos'),
            'tmpdir': os.path.join(base, 'tmp'),
+           'checkout': os.path.join(base, 'gitdepot'),
+           'auth': os.path.join(base, 'authorized_keys'),
            'conf': os.path.join(base, 'gitdepot.conf'),
           }
     return ctx
+
+def fingerprint(ctx, key):
+    keys = tempfile.NamedTemporaryFile(prefix='keys-', dir=ctx['tmpdir'], delete=False)
+    keys.write(key.encode('ascii'))
+    keys.flush()
+    out = run_command(('ssh-keygen', '-l', '-f', '/dev/stdin'),
+                      InvalidKeyError,
+                      shell=False,
+                      stdin=keys,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.STDOUT)
+    os.unlink(keys.name)
+    pieces = out.split(None)
+    fp = [p for p in pieces if p.startswith(b'SHA256')]
+    return fp
 
 def init(path, user, key):
     assert re.match('^' + gitdepot.parser.t_ATOM.__doc__ + '$', user)
@@ -140,6 +159,7 @@ def init(path, user, key):
     try:
         os.makedirs(ctx['repodir'])
         os.makedirs(ctx['tmpdir'])
+        fingerprint(ctx, key)
         conf = tempfile.NamedTemporaryFile(prefix='conf-', dir=ctx['tmpdir'], delete=False)
         conf.write('''user {0}
 repo gitdepot:
@@ -186,6 +206,7 @@ repo gitdepot:
         kwargs['stdin'] = open('/dev/null', 'r')
         run_command(('git', 'update-ref', 'refs/heads/master', commit.strip()),
                     CouldNotInitializeRepoError, **kwargs)
+        checkout_latest_gitdepot(ctx)
         success = True
     finally:
         if not success:
@@ -202,7 +223,7 @@ def serve(ctx, conf, user, cmd):
         raise UnknownCommandError()
     repo = None
     for r in conf.repos:
-        if r.id == gitdepot.parser.repo_id_normalize(arg):
+        if r.id == gitdepot.parser.id_normalize(arg):
             repo = r
             break
     if repo is None:
@@ -223,10 +244,7 @@ def serve(ctx, conf, user, cmd):
                      if p.entity in P and p.action == 'write']
             if perms is None:
                 raise UnknownRepositoryError()
-            if not os.path.exists(path):
-                if not os.path.exists(os.path.dirname(path)):
-                    os.path.makedirs(os.path.dirname(path))
-                init_repo(path)
+            assert os.path.exists(path)
         else:
             assert False
         # Now execute the git shell to do what we want
@@ -238,7 +256,70 @@ def serve(ctx, conf, user, cmd):
         if erase is not None:
             shutil.rmtree(erase)
 
-def hook_update(ctx, conf, repo, ref, old, new):
+def set_hook(ctx, repo, hook, sh):
+    assert hook in ('update', 'post-update',)
+    path = repo_absolute_path(ctx, repo)
+    path = os.path.join(path, 'hooks', hook)
+    assert os.path.exists(os.path.dirname(path))
+    tmp = tempfile.NamedTemporaryFile(prefix='hook-', dir=ctx['tmpdir'], delete=False)
+    tmp.write(sh.encode('ascii'))
+    tmp.flush()
+    os.chmod(tmp.name, stat.S_IRWXU)
+    os.rename(tmp.name, path)
+
+def checkout_latest_gitdepot(ctx):
+    if not os.path.exists(ctx['checkout']):
+        run_command(('git', 'clone', os.path.join(ctx['repodir'], 'gitdepot'), ctx['checkout']),
+                    CouldNotInitializeRepoError,
+                    shell=False,
+                    stdin=open('/dev/null', 'r'),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT)
+    else:
+        run_command(('git', 'fetch', os.path.join(ctx['repodir'], 'gitdepot'), 'master'),
+                    CouldNotInitializeRepoError,
+                    cwd=ctx['checkout'],
+                    shell=False,
+                    stdin=open('/dev/null', 'r'),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT)
+        run_command(('git', 'reset', '--hard', 'FETCH_HEAD'),
+                    CouldNotInitializeRepoError,
+                    cwd=ctx['checkout'],
+                    shell=False,
+                    stdin=open('/dev/null', 'r'),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT)
+    new_conf_path = os.path.join(ctx['checkout'], 'gitdepot.conf')
+    conf = gitdepot.parser.parse(new_conf_path)
+    auth = tempfile.NamedTemporaryFile(prefix='auth-', dir=ctx['tmpdir'], delete=False)
+    for user in conf.users:
+        keyfile = open(os.path.join(ctx['checkout'], user.id + '.keys'))
+        for line in keyfile:
+            key = line.strip()
+            fp = fingerprint(ctx, key)
+            authline = 'command="gitdepot --base {0} serve {1}",no-agent-forwarding,no-port-forwarding,no-user-rc,no-X11-forwarding {2}\n'
+            authline = authline.format(ctx['basedir'], user.id, key)
+            auth.write(authline.encode('ascii'))
+    auth.flush()
+    for repo in conf.repos:
+        path = repo_absolute_path(ctx, repo)
+        if not os.path.exists(path):
+            if not os.path.exists(os.path.dirname(path)):
+                os.path.makedirs(os.path.dirname(path))
+            init_repo(path)
+        if repo.id == '/gitdepot':
+            set_hook(ctx, repo, 'post-update', '''#!/bin/sh
+gitdepot --base {0} update-hook
+'''.format(ctx['basedir']))
+        set_hook(ctx, repo, 'update', '''#!/bin/sh
+gitdepot --base {0} permissions-check $@
+'''.format(ctx['basedir']))
+    shutil.copyfile(new_conf_path, ctx['conf'])
+    shutil.copyfile(auth.name, ctx['auth'])
+    os.unlink(auth.name)
+
+def permissions_check(ctx, conf, repo, ref, old, new):
     if 'GITDEPOT_PRINCIPAL' not in os.environ:
         sys.exit(1)
     P = relevant_principals(conf, os.environ['GITDEPOT_PRINCIPAL'])
@@ -273,7 +354,9 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    init('somepath', 'rescrv', 'key')
+    key = 'ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAIEAvynRwEfgIjBxpOVKaZDBTT9JBK9XZi0YXCM4fFQ1/EaGIPPFB+41gYlTNcstluMUope7ue1bOsDjDfiVas+15YW4dkJLLOidl/VSaaGTMt0axM0x6SLcw0RGYeXvlOiSEdO9tNmz2vFgtCtV861b0EGu1SmkdQBHRkPAobwgYcE='
+    init('somepath', 'rescrv', key)
+
 
 """
         cmd = os.environ.get('SSH_ORIGINAL_COMMAND', None)
