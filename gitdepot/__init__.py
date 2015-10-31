@@ -212,7 +212,7 @@ repo gitdepot:
         kwargs['stdin'] = open('/dev/null', 'r')
         run_command(('git', 'update-ref', 'refs/heads/master', commit.strip()),
                     CouldNotInitializeRepoError, **kwargs)
-        checkout_latest_gitdepot(ctx)
+        update_hook(ctx)
         success = True
     finally:
         if not success:
@@ -269,6 +269,33 @@ def set_hook(ctx, repo, hook, sh):
     os.chmod(tmp.name, stat.S_IRWXU)
     os.rename(tmp.name, path)
 
+def install_ssh_keys(ctx):
+    sshdir = os.path.expanduser('~/.ssh')
+    if not os.path.exists(sshdir):
+        os.makedirs(sshdir)
+    authfile = os.path.expanduser('~/.ssh/authorized_keys')
+    if os.path.exists(authfile):
+        text = open(authfile).read()
+    else:
+        text = ''
+    auth = open(ctx['auth']).read().strip()
+    if not auth.endswith('\n'):
+        auth += '\n'
+    START = '# begin gitdepot keys\n'
+    END = '# end gitdepot keys\n'
+    if START not in text:
+        out = text + START + auth + END
+    else:
+        head, tail = text.split(START)
+        body, tail = tail.split(END)
+        last_line = body.rsplit('\n')[-1]
+        out = head + START + auth + END + tail
+    new = tempfile.NamedTemporaryFile(prefix='gitdepot-',
+            dir=os.path.expanduser('~/.ssh'), delete=False)
+    new.write(out.encode('ascii'))
+    new.flush()
+    os.rename(new.name, authfile)
+
 def update_hook(ctx):
     if not os.path.exists(ctx['checkout']):
         run_command(('git', 'clone', os.path.join(ctx['repodir'], 'gitdepot'), ctx['checkout']),
@@ -320,6 +347,7 @@ gitdepot --base {0} permissions-check {1} $@
     shutil.copyfile(new_conf_path, ctx['conf'])
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
+    install_ssh_keys(ctx)
 
 def permissions_check(ctx, conf, repo, ref, old, new):
     if 'GITDEPOT_PRINCIPAL' not in os.environ:
@@ -351,6 +379,7 @@ def permissions_check(ctx, conf, repo, ref, old, new):
     sys.exit(1)
 
 def main(argv):
+    os.umask(0o077)
     parser = argparse.ArgumentParser(prog='gitdepot')
     parser.add_argument('--base', type=str, default='~',
                         help='socket to talk to minion daemon (default: ~)')
