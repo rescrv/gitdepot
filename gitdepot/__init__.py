@@ -44,6 +44,9 @@ class InvalidKeyError(Exception): pass
 def repo_absolute_path(ctx, repo):
     return os.path.join(ctx['repodir'], repo.id.lstrip('/'))
 
+def repo_gitdaemon_path(ctx, repo):
+    return os.path.join(ctx['daemondir'], repo.id.lstrip('/'))
+
 def repo_from_conf(repo, conf):
     for r in conf.repos:
         if r.id == gitdepot.parser.repo_id_normalize(repo):
@@ -135,6 +138,7 @@ def create_context(base):
     ctx = {'basedir': base,
            'repodir': os.path.join(base, 'repos'),
            'tmpdir': os.path.join(base, 'tmp'),
+           'daemondir': os.path.join(base, 'daemon'),
            'checkout': os.path.join(base, 'gitdepot'),
            'auth': os.path.join(base, 'authorized_keys'),
            'conf': os.path.join(base, 'gitdepot.conf'),
@@ -340,7 +344,15 @@ def update_hook(ctx):
         if repo.id == '/gitdepot':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
 gitdepot --base {0} update-hook
+git gc --auto --quiet
+git update-server-info
 '''.format(ctx['basedir']))
+        else:
+            set_hook(ctx, repo, 'post-update', '''#!/bin/sh
+gitdepot --base {0} git-daemon {1}
+git gc --auto --quiet
+git update-server-info
+'''.format(ctx['basedir'], repo.id))
         set_hook(ctx, repo, 'update', '''#!/bin/sh
 gitdepot --base {0} permissions-check {1} $@
 '''.format(ctx['basedir'], repo.id))
@@ -348,6 +360,27 @@ gitdepot --base {0} permissions-check {1} $@
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
     install_ssh_keys(ctx)
+
+def git_daemon(ctx, conf, repo):
+    if not isinstance(repo, gitdepot.parser.Repo):
+        repo = repo_from_conf(repo, conf)
+    if repo is None:
+        sys.exit(1)
+    P = relevant_principals(conf, 'public')
+    perms = [p for p in repo.permissions if p.entity in P]
+    if not perms:
+        return 0
+    p1 = repo_absolute_path(ctx, repo)
+    p2 = repo_gitdaemon_path(ctx, repo)
+    p3 = copy_repo(ctx, p1, perms)
+    f = open(os.path.join(p3, "git-daemon-export-ok"), 'w')
+    f.flush()
+    f.close()
+    if os.path.exists(p2):
+        os.unlink(p2)
+    if not os.path.exists(os.path.dirname(p2)):
+        os.makedirs(os.path.dirname(p2))
+    os.symlink(p3, p2)
 
 def permissions_check(ctx, conf, repo, ref, old, new):
     if 'GITDEPOT_PRINCIPAL' not in os.environ:
@@ -391,6 +424,8 @@ def main():
     p = subparsers.add_parser('update-hook')
     p.add_argument('ref', type=str)
     p.add_argument('commits', type=str, nargs='*')
+    p = subparsers.add_parser('git-daemon')
+    p.add_argument('repo', type=str)
     p = subparsers.add_parser('permissions-check')
     p.add_argument('repo', type=str)
     p.add_argument('ref', type=str)
@@ -409,5 +444,7 @@ def main():
         sys.exit(serve(ctx, conf, args.user, cmd) or 0)
     if args.action == 'update-hook':
         sys.exit(update_hook(ctx) or 0)
+    if args.action == 'git-daemon':
+        sys.exit(git_daemon(ctx, conf, args.repo) or 0)
     if args.action == 'permissions-check':
         sys.exit(permissions_check(ctx, conf, args.repo, args.ref, args.old, args.new) or 0)
