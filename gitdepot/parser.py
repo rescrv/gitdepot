@@ -508,6 +508,8 @@ def p_hook(t):
     hook : HOOK ATOM ATOM NEWLINE
     hook : HOOK ATOM ATOM atom_list NEWLINE
     '''
+    if t[2] not in ('post-receive',):
+        raise ParseError('Hook %s not permitted' % t[2])
     if len(t) == 5:
         t[0] = Hook(hook=t[2], script=t[3], args=())
     elif len(t) == 6:

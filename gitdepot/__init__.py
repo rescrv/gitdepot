@@ -28,6 +28,7 @@ import argparse
 import fnmatch
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -263,7 +264,7 @@ def serve(ctx, conf, user, cmd):
             shutil.rmtree(erase)
 
 def set_hook(ctx, repo, hook, sh):
-    assert hook in ('update', 'post-update',)
+    assert hook in ('update', 'post-update', 'post-receive',)
     path = repo_absolute_path(ctx, repo)
     path = os.path.join(path, 'hooks', hook)
     assert os.path.exists(os.path.dirname(path))
@@ -327,7 +328,10 @@ def update_hook(ctx):
     conf = gitdepot.parser.parse(new_conf_path)
     auth = tempfile.NamedTemporaryFile(prefix='auth-', dir=ctx['tmpdir'], delete=False)
     for user in conf.users:
-        keyfile = open(os.path.join(ctx['checkout'], user.id + '.keys'))
+        keyfilename = os.path.join(ctx['checkout'], user.id + '.keys')
+        if not os.path.exists(keyfilename):
+            continue
+        keyfile = open(keyfilename)
         for line in keyfile:
             key = line.strip()
             fp = fingerprint(ctx, key)
@@ -356,6 +360,13 @@ git update-server-info
         set_hook(ctx, repo, 'update', '''#!/bin/sh
 gitdepot --base {0} permissions-check {1} $@
 '''.format(ctx['basedir'], repo.id))
+        if repo.hooks:
+            assert all([h.hook == 'post-receive' for h in repo.hooks])
+            hook = '#!/bin/sh\n'
+            for h in repo.hooks:
+                s = os.path.join(ctx['checkout'], h.script.lstrip('/'))
+                hook += '{0} {1}\n'.format(s, ' '.join([shlex.quote(a) for a in h.args]))
+            set_hook(ctx, repo, 'post-receive', hook)
     shutil.copyfile(new_conf_path, ctx['conf'])
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
@@ -448,3 +459,6 @@ def main():
         sys.exit(git_daemon(ctx, conf, args.repo) or 0)
     if args.action == 'permissions-check':
         sys.exit(permissions_check(ctx, conf, args.repo, args.ref, args.old, args.new) or 0)
+
+if __name__ == '__main__':
+    main()
