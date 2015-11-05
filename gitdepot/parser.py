@@ -42,8 +42,9 @@ class ParseError(Exception): pass
 
 User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
-Repo = collections.namedtuple('Repo', ('id', 'permissions'))
+Repo = collections.namedtuple('Repo', ('id', 'permissions', 'hooks'))
 Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
+Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
 # Tokens
@@ -55,6 +56,7 @@ reserved = {
     'grant': 'GRANT',
     'access': 'ACCESS',
     'to': 'TO',
+    'hook': 'HOOK',
 }
 
 tokens = (
@@ -293,7 +295,7 @@ def p_user(t):
 def p_group(t):
     '''
     group : GROUP ATOM NEWLINE
-          | GROUP ATOM COLON NEWLINE INDENT identifier_list_block DEDENT
+          | GROUP ATOM COLON NEWLINE INDENT atom_list_block DEDENT
     '''
     t[2] = id_normalize(t[2])
     principals = t.lexer.git_users | t.lexer.git_groups
@@ -310,7 +312,7 @@ def p_group(t):
                              (t.lexer.path, t.lexer.lineno, m))
     t[0] = Group(id=t[2], members=members)
 
-REPO_DEFAULTS = {'permissions': []}
+REPO_DEFAULTS = {'permissions': (), 'hooks': ()}
 
 def repo_id_normalize(x):
     x = os.path.normpath(x)
@@ -328,7 +330,7 @@ def all_parents(repo):
         repo = dirname
     return parents
 
-def p_repo1(t):
+def p_repo(t):
     '''
     repo : REPO ATOM NEWLINE
     '''
@@ -342,9 +344,9 @@ def p_repo1(t):
     t.lexer.git_repos.add(name)
     t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, {})
 
-def p_repo2(t):
+def p_repo_detailed(t):
     '''
-    repo : REPO ATOM COLON NEWLINE INDENT acl_list DEDENT
+    repo : REPO ATOM COLON NEWLINE INDENT repo_details DEDENT
     '''
     name = repo_id_normalize(t[2])
     if name in t.lexer.git_repos:
@@ -354,36 +356,63 @@ def p_repo2(t):
         raise ParseError('%s:%d: prefix of repo %s already defined' %
                      (t.lexer.path, t.lexer.lineno, name))
     t.lexer.git_repos.add(name)
-    extra = {'permissions': t[6]}
+    metadata, permissions, hooks = t[6]
+    if metadata:
+        extra = metadata.copy()
+    else:
+        extra = {}
+    if permissions:
+        extra.update({'permissions': tuple(permissions)})
+    if hooks:
+        extra.update({'hooks': tuple(hooks)})
     t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
 
-def p_repo3(t):
+def p_repo_details_dict(t):
     '''
-    repo : REPO ATOM COLON NEWLINE INDENT dictionary DEDENT
+    repo_details : dictionary
     '''
-    name = repo_id_normalize(t[2])
-    extra = t[6]
-    if 'permissions' in extra:
-        raise ParseError('%s:%d: permissions must be specified in an ACL list' %
-                     (t.lexer.path, t.lexer.lineno))
-    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
+    t[0] = (t[1], None, None)
 
-def p_repo4(t):
+def p_repo_details_acl(t):
     '''
-    repo : REPO ATOM COLON NEWLINE INDENT dictionary acl_list DEDENT
+    repo_details : acl_list
     '''
-    name = repo_id_normalize(t[2])
-    extra = t[6]
-    if 'permissions' in extra:
-        raise ParseError('%s:%d: permissions must be specified in an ACL list' %
-                     (t.lexer.path, t.lexer.lineno))
-    extra['permissions'] = t[7]
-    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
+    t[0] = (None, t[1], None)
 
-def p_identifier_list_block(t):
+def p_repo_details_hooks(t):
     '''
-    identifier_list_block : identifier_list_block ATOM NEWLINE
-                          | ATOM NEWLINE
+    repo_details : hooks
+    '''
+    t[0] = (None, None, t[1])
+
+def p_repo_details_dict_acl(t):
+    '''
+    repo_details : dictionary acl_list
+    '''
+    t[0] = (t[1], t[2], None)
+
+def p_repo_details_acl_hooks(t):
+    '''
+    repo_details : acl_list hooks
+    '''
+    t[0] = (None, t[1], t[2])
+
+def p_repo_details_dict_hooks(t):
+    '''
+    repo_details : dictionary hooks
+    '''
+    t[0] = (t[1], None, t[2])
+
+def p_repo_details_dict_acl_hooks(t):
+    '''
+    repo_details : dictionary acl_list hooks
+    '''
+    t[0] = (t[1], t[2], t[3])
+
+def p_atom_list_block(t):
+    '''
+    atom_list_block : atom_list_block ATOM NEWLINE
+                    | ATOM NEWLINE
     '''
     if len(t) == 3:
         t[0] = [t[1]]
@@ -461,6 +490,42 @@ def p_acl2(t):
         raise ParseError('%s:%d: unknown action %s' %
                      (t.lexer.path, t.lexer.lineno, t[3]))
     t[0] = Grant(t[2], action, t[6])
+
+def p_hooks(t):
+    '''
+    hooks : hooks hook
+          | hook
+    '''
+    if len(t) == 3:
+        t[0] = t[1] + [t[2]]
+    elif len(t) == 2:
+        t[0] = [t[1]]
+    else:
+        assert False
+
+def p_hook(t):
+    '''
+    hook : HOOK ATOM ATOM NEWLINE
+    hook : HOOK ATOM ATOM atom_list NEWLINE
+    '''
+    if len(t) == 5:
+        t[0] = Hook(hook=t[2], script=t[3], args=())
+    elif len(t) == 6:
+        t[0] = Hook(hook=t[2], script=t[3], args=tuple(t4))
+    else:
+        assert False
+
+def p_atom_list(t):
+    '''
+    atom_list : atom_list ATOM
+              | ATOM
+    '''
+    if len(t) == 3:
+        t[0] = t[1] + [t[2]]
+    elif len(t) == 2:
+        t[0] = [t[1]]
+    else:
+        assert False
 
 def p_error(t):
     if t is None:
