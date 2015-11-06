@@ -557,8 +557,8 @@ def parse(filename):
     users = sorted([x for x in conf if isinstance(x, User)])
     groups = sorted([x for x in conf if isinstance(x, Group)])
     repos = sorted([x for x in conf if isinstance(x, Repo)])
-    if not [r for r in repos if r.id == '/gitdepot']:
-        raise ParseError('configuration must contain a "gitdepot" repo')
+    if not [r for r in repos if r.id == '/meta']:
+        raise ParseError('configuration must contain a "meta" repo')
     return Configuration(users, groups, repos)
 
 if __name__ == '__main__':

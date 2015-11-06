@@ -173,12 +173,12 @@ def init(path, user, key):
         fingerprint(ctx, key)
         conf = tempfile.NamedTemporaryFile(prefix='conf-', dir=ctx['tmpdir'], delete=False)
         conf.write('''user {0}
-repo gitdepot:
+repo meta:
     grant {0} write access
 '''.format(user).encode('utf8'))
         conf.flush()
         gitdepot.parser.parse(conf.name)
-        path = os.path.join(ctx['repodir'], 'gitdepot')
+        path = os.path.join(ctx['repodir'], 'meta')
         init_repo(path)
         kwargs = {'cwd': path,
                   'shell': False,
@@ -304,14 +304,14 @@ def install_ssh_keys(ctx):
 
 def update_hook(ctx):
     if not os.path.exists(ctx['checkout']):
-        run_command(('git', 'clone', os.path.join(ctx['repodir'], 'gitdepot'), ctx['checkout']),
+        run_command(('git', 'clone', os.path.join(ctx['repodir'], 'meta'), ctx['checkout']),
                     CouldNotInitializeRepoError,
                     shell=False,
                     stdin=open('/dev/null', 'r'),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT)
     else:
-        run_command(('git', 'fetch', os.path.join(ctx['repodir'], 'gitdepot'), 'master'),
+        run_command(('git', 'fetch', os.path.join(ctx['repodir'], 'meta'), 'master'),
                     CouldNotInitializeRepoError,
                     cwd=ctx['checkout'],
                     shell=False,
@@ -346,7 +346,7 @@ def update_hook(ctx):
             if not os.path.exists(os.path.dirname(path)):
                 os.path.makedirs(os.path.dirname(path))
             init_repo(path)
-        if repo.id == '/gitdepot':
+        if repo.id == '/meta':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
 gitdepot --base {0} update-hook
 git gc --auto --quiet
