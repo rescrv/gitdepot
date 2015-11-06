@@ -303,6 +303,8 @@ def install_ssh_keys(ctx):
     os.rename(new.name, authfile)
 
 def update_hook(ctx):
+    if 'GIT_DIR' in os.environ:
+        del os.environ['GIT_DIR']
     if not os.path.exists(ctx['checkout']):
         run_command(('git', 'clone', os.path.join(ctx['repodir'], 'meta'), ctx['checkout']),
                     CouldNotInitializeRepoError,
