@@ -257,7 +257,8 @@ def serve(ctx, conf, user, cmd):
             assert False
         # Now execute the git shell to do what we want
         os.environ['GITDEPOT_PRINCIPAL'] = user
-        newcmd = ' '.join([shlex.quote(x) for x in ('git', action, path)])
+        assert shlex.quote(path) == path
+        newcmd = "git {0} '{1}'".format(action, path)
         subprocess.check_call(['git', 'shell', '-c', newcmd], shell=False)
     finally:
         if erase is not None:
