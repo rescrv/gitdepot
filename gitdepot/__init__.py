@@ -348,7 +348,7 @@ def update_hook(ctx):
             init_repo(path)
         if repo.id == '/meta':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
-gitdepot --base {0} update-hook
+gitdepot --base {0} update-hook $@
 git gc --auto --quiet
 git update-server-info
 '''.format(ctx['basedir']))
