@@ -150,10 +150,10 @@ def fingerprint(ctx, key):
     keys = tempfile.NamedTemporaryFile(prefix='keys-', dir=ctx['tmpdir'], delete=False)
     keys.write(key.encode('ascii'))
     keys.flush()
-    out = run_command(('ssh-keygen', '-l', '-f', '/dev/stdin'),
+    out = run_command(('ssh-keygen', '-l', '-f', keys.name),
                       InvalidKeyError,
                       shell=False,
-                      stdin=keys,
+                      stdin=open('/dev/null', 'r'),
                       stdout=subprocess.PIPE,
                       stderr=subprocess.STDOUT)
     os.unlink(keys.name)
