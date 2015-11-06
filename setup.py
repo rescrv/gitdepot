@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name = 'gitdepot',
-      version = '0.1.8',
+      version = '0.1.9',
       description = 'A simple git repository management system',
       url = 'http://rescrv.net/',
       author = 'Robert Escriva',
