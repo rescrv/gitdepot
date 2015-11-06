@@ -230,6 +230,7 @@ def serve(ctx, conf, user, cmd):
     arg = None
     if ' ' in cmd:
         action, arg = cmd.split(None, 1)
+        arg = arg.strip("'")
     if action not in ('upload-pack', 'upload-archive', 'receive-pack'):
         raise UnknownCommandError()
     repo = repo_from_conf(arg, conf)
@@ -256,9 +257,7 @@ def serve(ctx, conf, user, cmd):
             assert False
         # Now execute the git shell to do what we want
         os.environ['GITDEPOT_PRINCIPAL'] = user
-        #subprocess.check_call(['git', 'shell', '-c', 'git', action, path], shell=False)
-        # XXX
-        print(['git', 'shell', '-c', 'git', action, path])
+        subprocess.check_call(['git', 'shell', '-c', 'git', action, path], shell=False)
     finally:
         if erase is not None:
             shutil.rmtree(erase)
