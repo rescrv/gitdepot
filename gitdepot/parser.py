@@ -370,14 +370,12 @@ def p_repo_detailed(t):
         extra.update({'permissions': tuple(permissions)})
     if hooks:
         extra.update({'hooks': tuple(hooks)})
+    repo_defaults = {'permissions': (), 'hooks': ()}
+    repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
     if name == '/default':
-        repo_defaults = {'permissions': (), 'hooks': ()}
-        repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
         t.lexer.git_repo_default = repo
     else:
-        repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
-                         'hooks': t.lexer.git_repo_default.hooks}
-        t[0] = dictionary_to_class(t, Repo, name, repo_defaults, extra)
+        t[0] = repo
 
 def p_repo_details_dict(t):
     '''
