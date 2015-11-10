@@ -312,8 +312,6 @@ def p_group(t):
                              (t.lexer.path, t.lexer.lineno, m))
     t[0] = Group(id=t[2], members=members)
 
-REPO_DEFAULTS = {'permissions': (), 'hooks': ()}
-
 def repo_id_normalize(x):
     x = os.path.normpath(x)
     x = x.strip('/')
@@ -335,27 +333,34 @@ def p_repo(t):
     repo : REPO ATOM NEWLINE
     '''
     name = repo_id_normalize(t[2])
-    if name in t.lexer.git_repos:
-        raise ParseError('%s:%d: repo %s already defined' %
-                     (t.lexer.path, t.lexer.lineno, name))
-    if all_parents(name) & t.lexer.git_repos:
-        raise ParseError('%s:%d: prefix of repo %s already defined' %
-                     (t.lexer.path, t.lexer.lineno, name))
-    t.lexer.git_repos.add(name)
-    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, {})
+    if name != '/default':
+        if name in t.lexer.git_repos:
+            raise ParseError('%s:%d: repo %s already defined' %
+                         (t.lexer.path, t.lexer.lineno, name))
+        if all_parents(name) & t.lexer.git_repos:
+            raise ParseError('%s:%d: prefix of repo %s already defined' %
+                         (t.lexer.path, t.lexer.lineno, name))
+        t.lexer.git_repos.add(name)
+    if name == '/default':
+        t.lexer.git_repo_default = Repo(id='default', permissions=(), hooks=())
+    else:
+        repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
+                         'hooks': t.lexer.git_repo_default.hooks}
+        t[0] = dictionary_to_class(t, Repo, name, repo_defaults, {})
 
 def p_repo_detailed(t):
     '''
     repo : REPO ATOM COLON NEWLINE INDENT repo_details DEDENT
     '''
     name = repo_id_normalize(t[2])
-    if name in t.lexer.git_repos:
-        raise ParseError('%s:%d: repo %s already defined' %
-                     (t.lexer.path, t.lexer.lineno, name))
-    if all_parents(name) & t.lexer.git_repos:
-        raise ParseError('%s:%d: prefix of repo %s already defined' %
-                     (t.lexer.path, t.lexer.lineno, name))
-    t.lexer.git_repos.add(name)
+    if name != '/default':
+        if name in t.lexer.git_repos:
+            raise ParseError('%s:%d: repo %s already defined' %
+                         (t.lexer.path, t.lexer.lineno, name))
+        if all_parents(name) & t.lexer.git_repos:
+            raise ParseError('%s:%d: prefix of repo %s already defined' %
+                         (t.lexer.path, t.lexer.lineno, name))
+        t.lexer.git_repos.add(name)
     metadata, permissions, hooks = t[6]
     if metadata:
         extra = metadata.copy()
@@ -365,7 +370,14 @@ def p_repo_detailed(t):
         extra.update({'permissions': tuple(permissions)})
     if hooks:
         extra.update({'hooks': tuple(hooks)})
-    t[0] = dictionary_to_class(t, Repo, name, REPO_DEFAULTS, extra)
+    if name == '/default':
+        repo_defaults = {'permissions': (), 'hooks': ()}
+        repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
+        t.lexer.git_repo_default = repo
+    else:
+        repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
+                         'hooks': t.lexer.git_repo_default.hooks}
+        t[0] = dictionary_to_class(t, Repo, name, repo_defaults, extra)
 
 def p_repo_details_dict(t):
     '''
@@ -550,6 +562,7 @@ def parse(filename):
     lexer.git_groups = set()
     lexer.git_groups.add('public')
     lexer.git_repos = set()
+    lexer.git_repo_default = Repo(id='default', permissions=(), hooks=())
     tf = TokenFunc(lexer)
     parser = ply.yacc.yacc(debug=0, write_tables=0,
                            errorlog=ply.yacc.NullLogger())
