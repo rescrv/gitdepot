@@ -351,7 +351,7 @@ def update_hook(ctx):
         path = repo_absolute_path(ctx, repo)
         if not os.path.exists(path):
             if not os.path.exists(os.path.dirname(path)):
-                os.path.makedirs(os.path.dirname(path))
+                os.makedirs(os.path.dirname(path))
             init_repo(path)
         if repo.id == '/meta':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
