@@ -385,7 +385,7 @@ gitdepot --base {0} permissions-check {1} $@
         rm_id = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
         rm_id += repo_id.replace('/', '_')
         os.renames(d, os.path.join(ctx['rmdir'], rm_id))
-    for (d, ds, fs) in os.walk(['daemondir']):
+    for (d, ds, fs) in os.walk(ctx['daemondir']):
         for f in fs:
             p = os.path.join(d, f)
             repo_id = '/' + os.path.relpath(p, ctx['daemondir'])
