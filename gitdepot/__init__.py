@@ -347,7 +347,7 @@ def update_hook(ctx):
             auth.write(authline.encode('ascii'))
     auth.flush()
     for repo in conf.repos:
-        git_daemon(conf, repo)
+        git_daemon(ctx, conf, repo)
         path = repo_absolute_path(ctx, repo)
         if not os.path.exists(path):
             if not os.path.exists(os.path.dirname(path)):
