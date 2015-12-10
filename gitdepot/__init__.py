@@ -25,8 +25,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import datetime
 import fnmatch
 import os
+import os.path
 import re
 import shlex
 import shutil
@@ -140,6 +142,7 @@ def create_context(base):
            'repodir': os.path.join(base, 'repos'),
            'tmpdir': os.path.join(base, 'tmp'),
            'daemondir': os.path.join(base, 'daemon'),
+           'rmdir': os.path.join(base, 'removed'),
            'checkout': os.path.join(base, 'gitdepot'),
            'auth': os.path.join(base, 'authorized_keys'),
            'conf': os.path.join(base, 'gitdepot.conf'),
@@ -170,6 +173,7 @@ def init(path, user, key):
     try:
         os.makedirs(ctx['repodir'])
         os.makedirs(ctx['tmpdir'])
+        os.makedirs(ctx['rmdir'])
         fingerprint(ctx, key)
         conf = tempfile.NamedTemporaryFile(prefix='conf-', dir=ctx['tmpdir'], delete=False)
         conf.write('''user {0}
@@ -343,6 +347,7 @@ def update_hook(ctx):
             auth.write(authline.encode('ascii'))
     auth.flush()
     for repo in conf.repos:
+        git_daemon(conf, repo)
         path = repo_absolute_path(ctx, repo)
         if not os.path.exists(path):
             if not os.path.exists(os.path.dirname(path)):
@@ -370,6 +375,23 @@ gitdepot --base {0} permissions-check {1} $@
                 s = os.path.join(ctx['checkout'], h.script.lstrip('/'))
                 hook += '{0} {1}\n'.format(s, ' '.join([shlex.quote(a) for a in h.args]))
             set_hook(ctx, repo, 'post-receive', hook)
+    ids = set([r.id for r in conf.repos])
+    for (d, ds, fs) in os.walk(ctx['repodir']):
+        if 'config' not in fs:
+            continue
+        repo_id = '/' + os.path.relpath(d, ctx['repodir'])
+        if repo_id in ids:
+            continue
+        rm_id = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        rm_id += repo_id.replace('/', '_')
+        os.renames(d, os.path.join(ctx['rmdir'], rm_id))
+    for (d, ds, fs) in os.walk(['daemondir']):
+        for f in fs:
+            p = os.path.join(d, f)
+            repo_id = '/' + os.path.relpath(p, ctx['daemondir'])
+            if repo_id in ids:
+                continue
+            os.unlink(p)
     shutil.copyfile(new_conf_path, ctx['conf'])
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
