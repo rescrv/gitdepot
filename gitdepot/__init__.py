@@ -386,12 +386,13 @@ gitdepot --base {0} permissions-check {1} $@
         rm_id += repo_id.replace('/', '_')
         os.renames(d, os.path.join(ctx['rmdir'], rm_id))
     for (d, ds, fs) in os.walk(ctx['daemondir']):
-        for f in fs:
+        for f in ds + fs:
             p = os.path.join(d, f)
             repo_id = '/' + os.path.relpath(p, ctx['daemondir'])
             if repo_id in ids:
                 continue
-            os.unlink(p)
+            if os.path.islink(p):
+                os.unlink(p)
     shutil.copyfile(new_conf_path, ctx['conf'])
     shutil.copyfile(auth.name, ctx['auth'])
     os.unlink(auth.name)
