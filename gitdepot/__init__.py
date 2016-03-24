@@ -94,7 +94,7 @@ def repo_refs(path, reftype, perms):
         for f in files:
             ref = os.path.relpath(os.path.join(root, f), path)
             for p in patterns:
-                if fnmatch.fnmatch(ref, pattern):
+                if fnmatch.fnmatch(ref, p):
                     ref = os.path.relpath(os.path.join(root, f), refs_path)
                     refs.append(ref)
     return refs
