@@ -42,7 +42,7 @@ class ParseError(Exception): pass
 
 User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
-Repo = collections.namedtuple('Repo', ('id', 'permissions', 'hooks'))
+Repo = collections.namedtuple('Repo', ('id', 'mailinglist', 'announcelist', 'permissions', 'hooks'))
 Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))

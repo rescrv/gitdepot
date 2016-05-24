@@ -69,6 +69,8 @@ def relevant_principals(conf, user):
 def run_command(args, error, **kwargs):
     p = subprocess.Popen(args, **kwargs)
     out, err = p.communicate()
+    if error is None:
+        return None
     if p.returncode != 0:
         raise error(out)
     return out
@@ -353,6 +355,14 @@ def update_hook(ctx):
             if not os.path.exists(os.path.dirname(path)):
                 os.makedirs(os.path.dirname(path))
             init_repo(path)
+        if repo.mailinglist:
+            run_command(('git', 'config', '--unset', 'hooks.mailinglist', repo.mailinglist), CouldNotInitializeRepoError)
+        else:
+            run_command(('git', 'config', '--unset', 'hooks.mailinglist'), None)
+        if repo.announcelist:
+            run_command(('git', 'config', '--unset', 'hooks.announcelist', repo.announcelist), CouldNotInitializeRepoError)
+        else:
+            run_command(('git', 'config', '--unset', 'hooks.announcelist'), None)
         if repo.id == '/meta':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
 gitdepot --base {0} update-hook $@
