@@ -356,13 +356,33 @@ def update_hook(ctx):
                 os.makedirs(os.path.dirname(path))
             init_repo(path)
         if repo.mailinglist:
-            run_command(('git', 'config', '--unset', 'hooks.mailinglist', repo.mailinglist), CouldNotInitializeRepoError)
+            run_command(('git', 'config', '--unset', 'hooks.mailinglist', repo.mailinglist), CouldNotInitializeRepoError,
+                        cwd=path,
+                        shell=False,
+                        stdin=open('/dev/null', 'r'),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
         else:
-            run_command(('git', 'config', '--unset', 'hooks.mailinglist'), None)
+            run_command(('git', 'config', '--unset', 'hooks.mailinglist'), None,
+                        cwd=path,
+                        shell=False,
+                        stdin=open('/dev/null', 'r'),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
         if repo.announcelist:
-            run_command(('git', 'config', '--unset', 'hooks.announcelist', repo.announcelist), CouldNotInitializeRepoError)
+            run_command(('git', 'config', '--unset', 'hooks.announcelist', repo.announcelist), CouldNotInitializeRepoError,
+                        cwd=path,
+                        shell=False,
+                        stdin=open('/dev/null', 'r'),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
         else:
-            run_command(('git', 'config', '--unset', 'hooks.announcelist'), None)
+            run_command(('git', 'config', '--unset', 'hooks.announcelist'), None,
+                        cwd=path,
+                        shell=False,
+                        stdin=open('/dev/null', 'r'),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
         if repo.id == '/meta':
             set_hook(ctx, repo, 'post-update', '''#!/bin/sh
 gitdepot --base {0} update-hook $@
