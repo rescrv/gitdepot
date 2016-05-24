@@ -348,7 +348,7 @@ def p_repo(t):
     else:
         repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
                          'mailinglist': t.lexer.git_repo_default.mailinglist,
-                         'announcelist': t.lexer.git_repo_default.annoucnelist,
+                         'announcelist': t.lexer.git_repo_default.announcelist,
                          'hooks': t.lexer.git_repo_default.hooks}
         t[0] = dictionary_to_class(t, Repo, name, repo_defaults, {})
 
@@ -378,7 +378,7 @@ def p_repo_detailed(t):
         t.lexer.git_repo_default = DEFAULT_REPO
     repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
                      'mailinglist': t.lexer.git_repo_default.mailinglist,
-                     'announcelist': t.lexer.git_repo_default.annoucnelist,
+                     'announcelist': t.lexer.git_repo_default.announcelist,
                      'hooks': t.lexer.git_repo_default.hooks}
     repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
     if name == '/default':
