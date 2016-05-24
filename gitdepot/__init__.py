@@ -104,7 +104,7 @@ def repo_refs(path, reftype, perms):
 def copy_repo(ctx, path, perms):
     r = tempfile.mkdtemp(prefix='repo-', dir=ctx['tmpdir'])
     init_repo(r)
-    shutil.copy(os.path.join(path, 'description'), os.path.join(r, 'description'))
+    shutil.copyfile(os.path.join(path, 'description'), os.path.join(r, 'description'))
     heads = repo_refs(path, 'heads', perms)
     tags = repo_refs(path, 'tags', perms)
     for head in heads:
@@ -188,7 +188,7 @@ repo meta:
         path = os.path.join(ctx['repodir'], 'meta')
         init_repo(path)
         with open(os.path.join(path, 'description'), 'w') as f:
-            f.write('gitdepot configuration repo')
+            f.write('gitdepot meta repo')
             f.flush()
         kwargs = {'cwd': path,
                   'shell': False,
