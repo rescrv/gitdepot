@@ -355,29 +355,8 @@ def update_hook(ctx):
             if not os.path.exists(os.path.dirname(path)):
                 os.makedirs(os.path.dirname(path))
             init_repo(path)
-        if repo.mailinglist:
-            run_command(('git', 'config', 'hooks.mailinglist', repo.mailinglist), CouldNotInitializeRepoError,
-                        cwd=path,
-                        shell=False,
-                        stdin=open('/dev/null', 'r'),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT)
-        else:
-            run_command(('git', 'config', '--unset', 'hooks.mailinglist'), None,
-                        cwd=path,
-                        shell=False,
-                        stdin=open('/dev/null', 'r'),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT)
-        if repo.announcelist:
-            run_command(('git', 'config', 'hooks.announcelist', repo.announcelist), CouldNotInitializeRepoError,
-                        cwd=path,
-                        shell=False,
-                        stdin=open('/dev/null', 'r'),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT)
-        else:
-            run_command(('git', 'config', '--unset', 'hooks.announcelist'), None,
+        for k, v in repo.config.items():
+            run_command(('git', 'config', k, v), CouldNotInitializeRepoError,
                         cwd=path,
                         shell=False,
                         stdin=open('/dev/null', 'r'),

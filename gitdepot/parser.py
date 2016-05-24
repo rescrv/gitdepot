@@ -42,12 +42,12 @@ class ParseError(Exception): pass
 
 User = collections.namedtuple('User', ('id', 'name', 'email'))
 Group = collections.namedtuple('Group', ('id', 'members'))
-Repo = collections.namedtuple('Repo', ('id', 'mailinglist', 'announcelist', 'permissions', 'hooks'))
+Repo = collections.namedtuple('Repo', ('id', 'config', 'permissions', 'hooks'))
 Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
-DEFAULT_REPO = Repo(id='default', mailinglist='', announcelist='', permissions=(), hooks=())
+DEFAULT_REPO = Repo(id='default', config=(), permissions=(), hooks=())
 
 # Tokens
 
@@ -347,8 +347,7 @@ def p_repo(t):
         t.lexer.git_repo_default = DEFAULT_REPO
     else:
         repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
-                         'mailinglist': t.lexer.git_repo_default.mailinglist,
-                         'announcelist': t.lexer.git_repo_default.announcelist,
+                         'config': t.lexer.git_repo_default.config,
                          'hooks': t.lexer.git_repo_default.hooks}
         t[0] = dictionary_to_class(t, Repo, name, repo_defaults, {})
 
@@ -374,11 +373,15 @@ def p_repo_detailed(t):
         extra.update({'permissions': tuple(permissions)})
     if hooks:
         extra.update({'hooks': tuple(hooks)})
+    config = dict([i for i in extra.items() if i[0] not in set(Repo._fields)])
+    for k in config.keys():
+        config[k] = str(config[k])
+        del extra[k]
+    extra['config'] = tuple(sorted(config.items()))
     if name == '/default':
         t.lexer.git_repo_default = DEFAULT_REPO
     repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
-                     'mailinglist': t.lexer.git_repo_default.mailinglist,
-                     'announcelist': t.lexer.git_repo_default.announcelist,
+                     'config': t.lexer.git_repo_default.config,
                      'hooks': t.lexer.git_repo_default.hooks}
     repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
     if name == '/default':
