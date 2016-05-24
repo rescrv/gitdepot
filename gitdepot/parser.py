@@ -47,6 +47,8 @@ Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
+DEFAULT_REPO = Repo(id='default', mailinglist=None, announcelist=None, permissions=(), hooks=())
+
 # Tokens
 
 reserved = {
@@ -342,9 +344,11 @@ def p_repo(t):
                          (t.lexer.path, t.lexer.lineno, name))
         t.lexer.git_repos.add(name)
     if name == '/default':
-        t.lexer.git_repo_default = Repo(id='default', permissions=(), hooks=())
+        t.lexer.git_repo_default = DEFAULT_REPO
     else:
         repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
+                         'mailinglist': t.lexer.git_repo_default.mailinglist,
+                         'announcelist': t.lexer.git_repo_default.annoucnelist,
                          'hooks': t.lexer.git_repo_default.hooks}
         t[0] = dictionary_to_class(t, Repo, name, repo_defaults, {})
 
@@ -370,7 +374,12 @@ def p_repo_detailed(t):
         extra.update({'permissions': tuple(permissions)})
     if hooks:
         extra.update({'hooks': tuple(hooks)})
-    repo_defaults = {'permissions': (), 'hooks': ()}
+    if name == '/default':
+        t.lexer.git_repo_default = DEFAULT_REPO
+    repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
+                     'mailinglist': t.lexer.git_repo_default.mailinglist,
+                     'announcelist': t.lexer.git_repo_default.annoucnelist,
+                     'hooks': t.lexer.git_repo_default.hooks}
     repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
     if name == '/default':
         t.lexer.git_repo_default = repo
@@ -560,7 +569,7 @@ def parse(filename):
     lexer.git_groups = set()
     lexer.git_groups.add('public')
     lexer.git_repos = set()
-    lexer.git_repo_default = Repo(id='default', permissions=(), hooks=())
+    lexer.git_repo_default = DEFAULT_REPO
     tf = TokenFunc(lexer)
     parser = ply.yacc.yacc(debug=0, write_tables=0,
                            errorlog=ply.yacc.NullLogger())
