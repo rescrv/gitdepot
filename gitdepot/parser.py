@@ -47,7 +47,7 @@ Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
-DEFAULT_REPO = Repo(id='default', mailinglist=None, announcelist=None, permissions=(), hooks=())
+DEFAULT_REPO = Repo(id='default', mailinglist='', announcelist='', permissions=(), hooks=())
 
 # Tokens
 
