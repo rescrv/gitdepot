@@ -361,7 +361,7 @@ def update_hook(ctx):
             init_repo(path)
             with open(os.path.join(path, 'description'), 'w') as f:
                 description = repo.id
-                for k, v in repo.config.items():
+                for k, v in repo.config:
                     if k == 'description':
                         description = v
                 f.write(description)
