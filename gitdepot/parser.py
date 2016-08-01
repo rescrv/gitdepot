@@ -1,4 +1,4 @@
-# Copyright (c) 2015, Robert Escriva
+# Copyright (c) 2015-2016, Robert Escriva
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -584,8 +584,38 @@ def parse(filename):
         raise ParseError('configuration must contain a "meta" repo')
     return Configuration(users, groups, repos)
 
+# Display Functions
+
+def print_raw(parsed):
+    print(parsed)
+
+def print_pretty(parsed):
+    assert isinstance(parsed, Configuration)
+    print('configuration:')
+    print('users:')
+    for user in parsed.users:
+        assert isinstance(user, User)
+        print(user)
+    print('groups:')
+    for group in parsed.groups:
+        assert isinstance(group, Group)
+        print(group)
+    print('repos:')
+    for repo in parsed.repos:
+        assert isinstance(repo, Repo)
+        print(repo)
+
 if __name__ == '__main__':
+    import argparse
     import sys
-    for x in sys.argv[1:]:
-        print('parsing', x)
-        print(parse(x))
+    parser = argparse.ArgumentParser(prog='gitdepot-parser')
+    parser.add_argument('-f', '--format', type=str, default='pretty',
+                        help='format to print the parsed files (default: pretty)')
+    parser.add_argument('file', type=str, help='config file to parse')
+    args = parser.parse_args()
+    parsed = parse(args.file)
+    func = locals().get('print_' + args.format, None)
+    if func is None:
+        print('unknown format %r' % args.format)
+    else:
+        func(parsed)
