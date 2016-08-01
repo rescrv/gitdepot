@@ -47,6 +47,7 @@ Grant = collections.namedtuple('Grant', ('entity', 'action', 'resource'))
 Hook = collections.namedtuple('Hook', ('hook', 'script', 'args'))
 Configuration = collections.namedtuple('Configuration', ('users', 'groups', 'repos'))
 
+DEFAULT_USER = User(id='default', name='', email='')
 DEFAULT_REPO = Repo(id='default', config=(), permissions=(), hooks=())
 
 # Tokens
@@ -227,18 +228,15 @@ class TokenFunc(object):
 def p_statements(t):
     '''
     stmts : stmts stmt
-          | stmt
+          |
     '''
     if len(t) == 3:
         stmts = t[1]
         if t[2]:
             stmts.append(t[2])
         t[0] = stmts
-    elif len(t) == 2:
-        if t[1]:
-            t[0] = [t[1]]
-        else:
-            t[0] = []
+    elif len(t) == 1:
+        t[0] = []
     else:
         assert False
 
@@ -257,7 +255,9 @@ def id_normalize(x):
     return x
 
 def dictionary_to_class(t, klass, key, defaults, dictionary):
+    if isinstance(defaults, tuple): defaults = defaults._asdict().copy()
     defaults = defaults.copy()
+    if 'id' in defaults: del defaults['id']
     dictionary = dictionary.copy()
     name = klass.__name__.lower()
     keys = set(dictionary.keys())
@@ -265,19 +265,25 @@ def dictionary_to_class(t, klass, key, defaults, dictionary):
     if not keys.issubset(good):
         k = list(keys - good)[0]
         raise ParseError('%s:%d: key "%s" not a %s option' %
-                     (t.lexer.path, t.lexer.lineno, k, name))
+                     (lexer.path, lexer.lineno, k, name))
     for k, v in dictionary.items():
         assert k in defaults
         T = type(defaults[k])
         if type(v) != T:
             raise ParseError('%s:%d: key "%s" expects type %s' %
-                         (t.lexer.path, t.lexer.lineno, k, T.__name__))
+                         (lexer.path, lexer.lineno, k, T.__name__))
         defaults[k] = v
     return klass(id=key, **defaults)
 
 def p_user(t):
     '''
     user : USER ATOM NEWLINE
+         | USER ATOM ATOM NEWLINE
+         | USER ATOM STRING NEWLINE
+         | USER ATOM ATOM ATOM NEWLINE
+         | USER ATOM ATOM STRING NEWLINE
+         | USER ATOM STRING ATOM NEWLINE
+         | USER ATOM STRING STRING NEWLINE
          | USER ATOM COLON NEWLINE INDENT dictionary DEDENT
     '''
     t[2] = id_normalize(t[2])
@@ -286,13 +292,21 @@ def p_user(t):
         raise ParseError('%s:%d: user %s already defined as a user or group' %
                      (t.lexer.path, t.lexer.lineno, t[2]))
     t.lexer.git_users.add(t[2])
-    defaults = {'name': '', 'email': ''}
     if len(t) == 4:
-        t[0] = dictionary_to_class(t, User, t[2], defaults, {})
+        dictionary = {}
+    elif len(t) == 5 and '@' in t[3]:
+        dictionary = {'email': t[3]}
+    elif len(t) == 5:
+        dictionary = {'name': t[3]}
+    elif len(t) == 6 and '@' in t[4]:
+        dictionary = {'name': t[3], 'email': t[4]}
+    elif len(t) == 6 and '@' in t[3]:
+        dictionary = {'name': t[4], 'email': t[3]}
     elif len(t) == 8:
-        t[0] = dictionary_to_class(t, User, t[2], defaults, t[6])
+        dictionary = t[6]
     else:
         assert False
+    t[0] = dictionary_to_class(t.lexer, User, t[2], DEFAULT_USER, dictionary)
 
 def p_group(t):
     '''
@@ -314,11 +328,6 @@ def p_group(t):
                              (t.lexer.path, t.lexer.lineno, m))
     t[0] = Group(id=t[2], members=members)
 
-def repo_id_normalize(x):
-    x = os.path.normpath(x)
-    x = x.strip('/')
-    return '/' + x
-
 def all_parents(repo):
     parents = set()
     parents.add(repo)
@@ -330,20 +339,23 @@ def all_parents(repo):
         repo = dirname
     return parents
 
+def define_repo(lexer, name):
+    if name != 'default':
+        if name in lexer.git_repos:
+            raise ParseError('%s:%d: repo %s already defined' %
+                         (lexer.path, lexer.lineno, name))
+        if all_parents(name) & lexer.git_repos:
+            raise ParseError('%s:%d: prefix of repo %s already defined' %
+                         (lexer.path, lexer.lineno, name))
+        lexer.git_repos.add(name)
+
 def p_repo(t):
     '''
     repo : REPO ATOM NEWLINE
     '''
-    name = repo_id_normalize(t[2])
-    if name != '/default':
-        if name in t.lexer.git_repos:
-            raise ParseError('%s:%d: repo %s already defined' %
-                         (t.lexer.path, t.lexer.lineno, name))
-        if all_parents(name) & t.lexer.git_repos:
-            raise ParseError('%s:%d: prefix of repo %s already defined' %
-                         (t.lexer.path, t.lexer.lineno, name))
-        t.lexer.git_repos.add(name)
-    if name == '/default':
+    name = id_normalize(t[2])
+    define_repo(t.lexer, name)
+    if name == 'default':
         t.lexer.git_repo_default = DEFAULT_REPO
     else:
         repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
@@ -355,15 +367,8 @@ def p_repo_detailed(t):
     '''
     repo : REPO ATOM COLON NEWLINE INDENT repo_details DEDENT
     '''
-    name = repo_id_normalize(t[2])
-    if name != '/default':
-        if name in t.lexer.git_repos:
-            raise ParseError('%s:%d: repo %s already defined' %
-                         (t.lexer.path, t.lexer.lineno, name))
-        if all_parents(name) & t.lexer.git_repos:
-            raise ParseError('%s:%d: prefix of repo %s already defined' %
-                         (t.lexer.path, t.lexer.lineno, name))
-        t.lexer.git_repos.add(name)
+    name = id_normalize(t[2])
+    define_repo(t.lexer, name)
     metadata, permissions, hooks = t[6]
     if metadata:
         extra = metadata.copy()
@@ -378,54 +383,18 @@ def p_repo_detailed(t):
         config[k] = str(config[k])
         del extra[k]
     extra['config'] = tuple(sorted(config.items()))
-    if name == '/default':
+    if name == 'default':
         t.lexer.git_repo_default = DEFAULT_REPO
     repo_defaults = {'permissions': t.lexer.git_repo_default.permissions,
                      'config': t.lexer.git_repo_default.config,
                      'hooks': t.lexer.git_repo_default.hooks}
     repo = dictionary_to_class(t, Repo, name, repo_defaults, extra)
-    if name == '/default':
+    if name == 'default':
         t.lexer.git_repo_default = repo
     else:
         t[0] = repo
 
-def p_repo_details_dict(t):
-    '''
-    repo_details : dictionary
-    '''
-    t[0] = (t[1], None, None)
-
-def p_repo_details_acl(t):
-    '''
-    repo_details : acl_list
-    '''
-    t[0] = (None, t[1], None)
-
-def p_repo_details_hooks(t):
-    '''
-    repo_details : hooks
-    '''
-    t[0] = (None, None, t[1])
-
-def p_repo_details_dict_acl(t):
-    '''
-    repo_details : dictionary acl_list
-    '''
-    t[0] = (t[1], t[2], None)
-
-def p_repo_details_acl_hooks(t):
-    '''
-    repo_details : acl_list hooks
-    '''
-    t[0] = (None, t[1], t[2])
-
-def p_repo_details_dict_hooks(t):
-    '''
-    repo_details : dictionary hooks
-    '''
-    t[0] = (t[1], None, t[2])
-
-def p_repo_details_dict_acl_hooks(t):
+def p_repo_details(t):
     '''
     repo_details : dictionary acl_list hooks
     '''
@@ -447,7 +416,7 @@ def p_atom_list_block(t):
 def p_dictionary(t):
     '''
     dictionary : dictionary kvpair
-               | kvpair
+               |
     '''
     d = None
     k = None
@@ -455,15 +424,14 @@ def p_dictionary(t):
     if len(t) == 3:
         d = t[1]
         k, v = t[2]
-    elif len(t) == 2:
+        if k in d:
+            raise ParseError('%s:%d: key "%s" already used' %
+                         (t.lexer.path, t.lexer.lineno, k))
+        d[k] = v
+    elif len(t) == 1:
         d = {}
-        k, v = t[1]
     else:
         assert False
-    if k in d:
-        raise ParseError('%s:%d: key "%s" already used' %
-                     (t.lexer.path, t.lexer.lineno, k))
-    d[k] = v
     t[0] = d
 
 def p_kvpair(t):
@@ -476,12 +444,12 @@ def p_kvpair(t):
 def p_acl_list(t):
     '''
     acl_list : acl_list acl
-             | acl
+             |
     '''
     if len(t) == 3:
         t[0] = t[1] + [t[2]]
-    elif len(t) == 2:
-        t[0] = [t[1]]
+    elif len(t) == 1:
+        t[0] = []
     else:
         assert False
 
@@ -516,12 +484,12 @@ def p_acl2(t):
 def p_hooks(t):
     '''
     hooks : hooks hook
-          | hook
+          |
     '''
     if len(t) == 3:
         t[0] = t[1] + [t[2]]
-    elif len(t) == 2:
-        t[0] = [t[1]]
+    elif len(t) == 1:
+        t[0] = []
     else:
         assert False
 
@@ -580,7 +548,7 @@ def parse(filename):
     users = sorted([x for x in conf if isinstance(x, User)])
     groups = sorted([x for x in conf if isinstance(x, Group)])
     repos = sorted([x for x in conf if isinstance(x, Repo)])
-    if not [r for r in repos if r.id == '/meta']:
+    if not [r for r in repos if r.id == 'meta']:
         raise ParseError('configuration must contain a "meta" repo')
     return Configuration(users, groups, repos)
 
