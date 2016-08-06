@@ -276,7 +276,7 @@ git gc --auto --quiet
 git update-server-info
 '''.format(self.BASEDIR, self.HOMEDIR, repo.id))
             self.set_hook(repo, 'update', '''#!/bin/sh
-gitdepot --base {0} --base {1} permissions-check {2} $@
+gitdepot --base {0} --home {1} permissions-check {2} $@
 '''.format(self.BASEDIR, self.HOMEDIR, repo.id))
             if repo.hooks:
                 assert all([h.hook == 'post-receive' for h in repo.hooks])
@@ -391,17 +391,17 @@ gitdepot --base {0} --base {1} permissions-check {2} $@
         if self.conf is None:
             sys.exit(1)
         if 'GITDEPOT_PRINCIPAL' not in os.environ:
-            sys.exit(1)
+            sys.exit(2)
         repo = self.get_repo(repo)
         if repo is None:
-            sys.exit(1)
+            sys.exit(3)
         P = self.get_principals(os.environ['GITDEPOT_PRINCIPAL'])
         perms = [p for p in repo.permissions
                  if p.entity in P and p.action == 'write']
         prefix = None
         if not ref.startswith('refs/heads/') and not ref.startswith('refs/tags/'):
             print('write access denied')
-            sys.exit(1)
+            sys.exit(4)
         elif ref.startswith('refs/heads/'):
             prefix = 'refs/heads/'
         elif ref.startswith('refs/tags/'):
@@ -415,7 +415,7 @@ gitdepot --base {0} --base {1} permissions-check {2} $@
             if fnmatch.fnmatch(ref, pattern):
                 sys.exit(0)
         print('write access denied')
-        sys.exit(1)
+        sys.exit(5)
 
     def fingerprint(self, key):
         keys = tempfile.NamedTemporaryFile(prefix='keys-', dir=self.TMPDIR, delete=False)
